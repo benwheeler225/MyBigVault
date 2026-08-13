@@ -1,280 +1,245 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabase";
+import { supabase } from "@/lib/supabase";
 
 type Property = {
   id: string;
-  owner_id: string;
   name: string;
-  address: string;
+  address: string | null;
+  owner_entity: string | null;
+  asset_type: string | null;
+  notes: string | null;
+  created_at: string;
 };
 
 export default function Home() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [userId, setUserId] = useState<string | null>(null);
-
   const [properties, setProperties] = useState<Property[]>([]);
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
+  const [ownerEntity, setOwnerEntity] = useState("");
+  const [assetType, setAssetType] = useState("");
+  const [notes, setNotes] = useState("");
 
   const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    checkUser();
-  }, []);
-
-  async function checkUser() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (user) {
-      setUserId(user.id);
-      await loadProperties(user.id);
-    }
-
-    setLoading(false);
-  }
-
-  async function login() {
-    setMessage("");
-
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-
-    if (data.user) {
-      setUserId(data.user.id);
-      setEmail("");
-      setPassword("");
-      setMessage("Logged in successfully.");
-      await loadProperties(data.user.id);
-    }
-  }
-
-  async function logout() {
-    await supabase.auth.signOut();
-    setUserId(null);
-    setProperties([]);
-    setMessage("Logged out.");
-  }
-
-  async function loadProperties(currentUserId: string) {
+  async function loadProperties() {
     const { data, error } = await supabase
       .from("properties")
-      .select("id, owner_id, name, address")
-      .eq("owner_id", currentUserId)
-      .order("name");
+      .select("*")
+      .order("created_at", { ascending: false });
 
     if (error) {
-      setMessage(error.message);
+      console.error(error);
+      setMessage("Error loading properties.");
       return;
     }
 
     setProperties(data ?? []);
   }
 
-  async function addProperty() {
-    if (!userId) return;
+  useEffect(() => {
+    loadProperties();
+  }, []);
+
+  async function addProperty(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
 
     if (!name.trim()) {
       setMessage("Please enter a property name.");
       return;
     }
 
+    setLoading(true);
     setMessage("");
 
-    const { error } = await supabase.from("properties").insert({
-      owner_id: userId,
-      name: name.trim(),
-      address: address.trim(),
-    });
+    const { error } = await supabase.from("properties").insert([
+      {
+        name: name.trim(),
+        address: address.trim() || null,
+        owner_entity: ownerEntity.trim() || null,
+        asset_type: assetType.trim() || null,
+        notes: notes.trim() || null,
+      },
+    ]);
 
     if (error) {
-      setMessage(error.message);
+      console.error(error);
+      setMessage(`Error adding property: ${error.message}`);
+      setLoading(false);
       return;
     }
 
     setName("");
     setAddress("");
+    setOwnerEntity("");
+    setAssetType("");
+    setNotes("");
+
     setMessage("Property added successfully.");
+    await loadProperties();
 
-    await loadProperties(userId);
-  }
-
-  if (loading) {
-    return (
-      <main style={{ padding: "40px", fontFamily: "Arial, sans-serif" }}>
-        <h1>MyBigVault</h1>
-        <p>Loading...</p>
-      </main>
-    );
-  }
-
-  if (!userId) {
-    return (
-      <main
-        style={{
-          maxWidth: "500px",
-          margin: "60px auto",
-          padding: "30px",
-          fontFamily: "Arial, sans-serif",
-        }}
-      >
-        <h1>MyBigVault</h1>
-        <h2>Login</h2>
-
-        <div style={{ marginBottom: "15px" }}>
-          <label>Email</label>
-          <br />
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "10px",
-              marginTop: "5px",
-              boxSizing: "border-box",
-            }}
-          />
-        </div>
-
-        <div style={{ marginBottom: "15px" }}>
-          <label>Password</label>
-          <br />
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "10px",
-              marginTop: "5px",
-              boxSizing: "border-box",
-            }}
-          />
-        </div>
-
-        <button
-          onClick={login}
-          style={{
-            padding: "10px 20px",
-            cursor: "pointer",
-          }}
-        >
-          Login
-        </button>
-
-        {message && <p>{message}</p>}
-      </main>
-    );
+    setLoading(false);
   }
 
   return (
     <main
       style={{
         maxWidth: "900px",
-        margin: "40px auto",
-        padding: "20px",
+        margin: "0 auto",
+        padding: "40px 20px",
         fontFamily: "Arial, sans-serif",
       }}
     >
-      <div
+      <h1 style={{ fontSize: "36px", marginBottom: "8px" }}>
+        MyBigVault
+      </h1>
+
+      <p style={{ marginBottom: "30px", color: "#555" }}>
+        Your private property and asset vault.
+      </p>
+
+      <section
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
+          border: "1px solid #ddd",
+          borderRadius: "10px",
+          padding: "24px",
+          marginBottom: "35px",
         }}
       >
-        <div>
-          <h1>MyBigVault</h1>
-          <p>Your private asset vault</p>
-        </div>
+        <h2 style={{ marginTop: 0 }}>Add Property</h2>
 
-        <button
-          onClick={logout}
-          style={{
-            padding: "8px 15px",
-            cursor: "pointer",
-          }}
-        >
-          Log Out
-        </button>
-      </div>
+        <form onSubmit={addProperty}>
+          <div style={{ marginBottom: "15px" }}>
+            <label
+              htmlFor="property-name"
+              style={{ display: "block", marginBottom: "5px" }}
+            >
+              Property Name *
+            </label>
 
-      <hr />
+            <input
+              id="property-name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Example: Bob Wallace Building"
+              style={{
+                width: "100%",
+                padding: "10px",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
 
-      <section style={{ marginTop: "30px" }}>
-        <h2>Add Property</h2>
+          <div style={{ marginBottom: "15px" }}>
+            <label
+              htmlFor="address"
+              style={{ display: "block", marginBottom: "5px" }}
+            >
+              Address
+            </label>
 
-        <div style={{ marginBottom: "12px" }}>
-          <label>Property Name</label>
-          <br />
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Example: Bob Wallace Building"
+            <input
+              id="address"
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="Property address"
+              style={{
+                width: "100%",
+                padding: "10px",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: "15px" }}>
+            <label
+              htmlFor="owner-entity"
+              style={{ display: "block", marginBottom: "5px" }}
+            >
+              Ownership Entity
+            </label>
+
+            <input
+              id="owner-entity"
+              type="text"
+              value={ownerEntity}
+              onChange={(e) => setOwnerEntity(e.target.value)}
+              placeholder="Example: BAA Investments LLC"
+              style={{
+                width: "100%",
+                padding: "10px",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: "15px" }}>
+            <label
+              htmlFor="asset-type"
+              style={{ display: "block", marginBottom: "5px" }}
+            >
+              Asset Type
+            </label>
+
+            <input
+              id="asset-type"
+              type="text"
+              value={assetType}
+              onChange={(e) => setAssetType(e.target.value)}
+              placeholder="Example: Commercial Rental"
+              style={{
+                width: "100%",
+                padding: "10px",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: "15px" }}>
+            <label
+              htmlFor="notes"
+              style={{ display: "block", marginBottom: "5px" }}
+            >
+              Notes
+            </label>
+
+            <textarea
+              id="notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Optional notes"
+              rows={4}
+              style={{
+                width: "100%",
+                padding: "10px",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
             style={{
-              width: "100%",
-              padding: "10px",
-              marginTop: "5px",
-              boxSizing: "border-box",
+              padding: "12px 20px",
+              fontSize: "16px",
+              cursor: loading ? "not-allowed" : "pointer",
             }}
-          />
-        </div>
+          >
+            {loading ? "Adding..." : "Add Property"}
+          </button>
+        </form>
 
-        <div style={{ marginBottom: "12px" }}>
-          <label>Address</label>
-          <br />
-          <input
-            type="text"
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            placeholder="Example: 3000 Bob Wallace Ave"
-            style={{
-              width: "100%",
-              padding: "10px",
-              marginTop: "5px",
-              boxSizing: "border-box",
-            }}
-          />
-        </div>
-
-        <button
-          onClick={addProperty}
-          style={{
-            padding: "10px 20px",
-            cursor: "pointer",
-          }}
-        >
-          Add Property
-        </button>
+        {message && (
+          <p style={{ marginTop: "15px", fontWeight: "bold" }}>{message}</p>
+        )}
       </section>
 
-      {message && (
-        <p
-          style={{
-            marginTop: "20px",
-            padding: "10px",
-            background: "#f3f3f3",
-          }}
-        >
-          {message}
-        </p>
-      )}
-
-      <section style={{ marginTop: "40px" }}>
+      <section>
         <h2>My Properties</h2>
 
         {properties.length === 0 ? (
@@ -285,13 +250,37 @@ export default function Home() {
               key={property.id}
               style={{
                 border: "1px solid #ddd",
-                borderRadius: "8px",
+                borderRadius: "10px",
                 padding: "18px",
                 marginBottom: "15px",
               }}
             >
               <h3 style={{ marginTop: 0 }}>{property.name}</h3>
-              <p>{property.address || "No address entered"}</p>
+
+              {property.address && (
+                <p>
+                  <strong>Address:</strong> {property.address}
+                </p>
+              )}
+
+              {property.owner_entity && (
+                <p>
+                  <strong>Ownership Entity:</strong>{" "}
+                  {property.owner_entity}
+                </p>
+              )}
+
+              {property.asset_type && (
+                <p>
+                  <strong>Asset Type:</strong> {property.asset_type}
+                </p>
+              )}
+
+              {property.notes && (
+                <p>
+                  <strong>Notes:</strong> {property.notes}
+                </p>
+              )}
             </div>
           ))
         )}
