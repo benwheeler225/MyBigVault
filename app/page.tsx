@@ -15,6 +15,17 @@ type Property = {
   notes: string | null;
 };
 
+type DocumentRecord = {
+  id: string;
+  created_at: string;
+  owner_id: string;
+  property_id: string;
+  file_name: string;
+  file_path: string;
+  file_type: string | null;
+  notes: string | null;
+};
+
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -24,6 +35,7 @@ export default function Home() {
   const [authMessage, setAuthMessage] = useState("");
 
   const [properties, setProperties] = useState<Property[]>([]);
+  const [documents, setDocuments] = useState<DocumentRecord[]>([]);
 
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
@@ -35,6 +47,8 @@ export default function Home() {
 
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [uploadingPropertyId, setUploadingPropertyId] =
+    useState<string | null>(null);
 
   useEffect(() => {
     async function initializeAuth() {
@@ -62,8 +76,10 @@ export default function Home() {
   useEffect(() => {
     if (user) {
       loadProperties(user.id);
+      loadDocuments(user.id);
     } else {
       setProperties([]);
+      setDocuments([]);
     }
   }, [user]);
 
@@ -96,6 +112,7 @@ export default function Home() {
 
     setUser(null);
     setProperties([]);
+    setDocuments([]);
     setMessage("");
     clearForm();
   }
@@ -114,6 +131,22 @@ export default function Home() {
     }
 
     setProperties(data ?? []);
+  }
+
+  async function loadDocuments(ownerId: string) {
+    const { data, error } = await supabase
+      .from("documents")
+      .select("*")
+      .eq("owner_id", ownerId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error(error);
+      setMessage(`Error loading documents: ${error.message}`);
+      return;
+    }
+
+    setDocuments(data ?? []);
   }
 
   function clearForm() {
@@ -208,6 +241,94 @@ export default function Home() {
   function cancelEdit() {
     clearForm();
     setMessage("Edit cancelled.");
+  }
+
+  async function uploadDocument(
+    property: Property,
+    file: File | undefined
+  ) {
+    if (!user) {
+      setMessage("You must be logged in.");
+      return;
+    }
+
+    if (!file) {
+      return;
+    }
+
+    setUploadingPropertyId(property.id);
+    setMessage("");
+
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+
+    const filePath =
+      `${user.id}/${property.id}/${Date.now()}-${safeFileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("property-documents")
+      .upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+
+    if (uploadError) {
+      console.error(uploadError);
+      setMessage(`Error uploading document: ${uploadError.message}`);
+      setUploadingPropertyId(null);
+      return;
+    }
+
+    const { error: databaseError } = await supabase
+      .from("documents")
+      .insert([
+        {
+          owner_id: user.id,
+          property_id: property.id,
+          file_name: file.name,
+          file_path: filePath,
+          file_type: file.type || null,
+          notes: null,
+        },
+      ]);
+
+    if (databaseError) {
+      console.error(databaseError);
+
+      await supabase.storage
+        .from("property-documents")
+        .remove([filePath]);
+
+      setMessage(
+        `File uploaded, but document record failed: ${databaseError.message}`
+      );
+
+      setUploadingPropertyId(null);
+      return;
+    }
+
+    await loadDocuments(user.id);
+
+    setMessage(
+      `Document "${file.name}" uploaded successfully to ${property.name}.`
+    );
+
+    setUploadingPropertyId(null);
+  }
+
+  async function openDocument(document: DocumentRecord) {
+    setMessage("");
+
+    const { data, error } = await supabase.storage
+      .from("property-documents")
+      .createSignedUrl(document.file_path, 60);
+
+    if (error) {
+      console.error(error);
+      setMessage(`Error opening document: ${error.message}`);
+      return;
+    }
+
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
 
   if (authLoading) {
@@ -538,8 +659,8 @@ export default function Home() {
               {loading
                 ? "Saving..."
                 : editingId
-                ? "Save Changes"
-                : "Add Property"}
+                  ? "Save Changes"
+                  : "Add Property"}
             </button>
 
             {editingId && (
@@ -576,56 +697,166 @@ export default function Home() {
         {properties.length === 0 ? (
           <p>No properties have been added yet.</p>
         ) : (
-          properties.map((property) => (
-            <div
-              key={property.id}
-              style={{
-                border: "1px solid #ddd",
-                borderRadius: "10px",
-                padding: "18px",
-                marginBottom: "15px",
-              }}
-            >
-              <h3 style={{ marginTop: 0 }}>{property.name}</h3>
+          properties.map((property) => {
+            const propertyDocuments = documents.filter(
+              (document) => document.property_id === property.id
+            );
 
-              {property.address && (
-                <p>
-                  <strong>Address:</strong> {property.address}
-                </p>
-              )}
-
-              {property.owner_entity && (
-                <p>
-                  <strong>Ownership Entity:</strong>{" "}
-                  {property.owner_entity}
-                </p>
-              )}
-
-              {property.asset_type && (
-                <p>
-                  <strong>Asset Type:</strong> {property.asset_type}
-                </p>
-              )}
-
-              {property.notes && (
-                <p>
-                  <strong>Notes:</strong> {property.notes}
-                </p>
-              )}
-
-              <button
-                type="button"
-                onClick={() => editProperty(property)}
+            return (
+              <div
+                key={property.id}
                 style={{
-                  padding: "9px 16px",
-                  cursor: "pointer",
-                  marginTop: "5px",
+                  border: "1px solid #ddd",
+                  borderRadius: "10px",
+                  padding: "18px",
+                  marginBottom: "20px",
                 }}
               >
-                Edit Property
-              </button>
-            </div>
-          ))
+                <h3 style={{ marginTop: 0 }}>
+                  {property.name}
+                </h3>
+
+                {property.address && (
+                  <p>
+                    <strong>Address:</strong> {property.address}
+                  </p>
+                )}
+
+                {property.owner_entity && (
+                  <p>
+                    <strong>Ownership Entity:</strong>{" "}
+                    {property.owner_entity}
+                  </p>
+                )}
+
+                {property.asset_type && (
+                  <p>
+                    <strong>Asset Type:</strong>{" "}
+                    {property.asset_type}
+                  </p>
+                )}
+
+                {property.notes && (
+                  <p>
+                    <strong>Notes:</strong> {property.notes}
+                  </p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => editProperty(property)}
+                  style={{
+                    padding: "9px 16px",
+                    cursor: "pointer",
+                    marginTop: "5px",
+                    marginRight: "10px",
+                  }}
+                >
+                  Edit Property
+                </button>
+
+                <div
+                  style={{
+                    marginTop: "25px",
+                    paddingTop: "20px",
+                    borderTop: "1px solid #eee",
+                  }}
+                >
+                  <h4
+                    style={{
+                      marginTop: 0,
+                      marginBottom: "12px",
+                    }}
+                  >
+                    Documents
+                  </h4>
+
+                  <label
+                    style={{
+                      display: "inline-block",
+                      padding: "10px 16px",
+                      border: "1px solid #aaa",
+                      borderRadius: "5px",
+                      cursor:
+                        uploadingPropertyId === property.id
+                          ? "not-allowed"
+                          : "pointer",
+                      marginBottom: "15px",
+                    }}
+                  >
+                    {uploadingPropertyId === property.id
+                      ? "Uploading..."
+                      : "Upload Document"}
+
+                    <input
+                      type="file"
+                      disabled={
+                        uploadingPropertyId === property.id
+                      }
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+
+                        await uploadDocument(property, file);
+
+                        e.target.value = "";
+                      }}
+                      style={{
+                        display: "none",
+                      }}
+                    />
+                  </label>
+
+                  {propertyDocuments.length === 0 ? (
+                    <p
+                      style={{
+                        color: "#666",
+                        marginBottom: 0,
+                      }}
+                    >
+                      No documents uploaded yet.
+                    </p>
+                  ) : (
+                    <div>
+                      {propertyDocuments.map((document) => (
+                        <div
+                          key={document.id}
+                          style={{
+                            border: "1px solid #eee",
+                            borderRadius: "6px",
+                            padding: "12px",
+                            marginBottom: "10px",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontWeight: "bold",
+                              marginBottom: "8px",
+                              wordBreak: "break-word",
+                            }}
+                          >
+                            {document.file_name}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openDocument(document)
+                            }
+                            style={{
+                              padding: "8px 14px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Open Document
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })
         )}
       </section>
     </main>
