@@ -1,187 +1,301 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "../lib/supabase";
 
-type Asset = {
+type Property = {
+  id: string;
+  owner_id: string;
   name: string;
   address: string;
-  owner: string;
-  type: string;
-  documents: number;
-  status: string;
-  note: string;
 };
 
-const assets: Asset[] = [
-  {
-    name: "Bob Wallace Building",
-    address: "3000 & 3002 Bob Wallace Ave., Huntsville, Alabama",
-    owner: "BAA Investments LLC",
-    type: "Commercial rental",
-    documents: 1,
-    status: "Active",
-    note: "Sales contract and roof-related records",
-  },
-  {
-    name: "Morris Pond Property",
-    address: "Morris Pond Road, Gulfport, Mississippi",
-    owner: "Wheeler Land Holdings LLC",
-    type: "Vacant land",
-    documents: 1,
-    status: "Under review",
-    note: "Purchase proposal and land records",
-  },
-  {
-    name: "Midpointe Chevron",
-    address: "24999 Highway 72, Athens, Alabama",
-    owner: "Jay Daradti",
-    type: "Convenience store",
-    documents: 0,
-    status: "Active",
-    note: "Ready for documents, insurance, and reminders",
-  },
-];
-
-const reminders = [
-  { title: "Review Morris Pond proposal", date: "Aug 12", asset: "Morris Pond Property" },
-  { title: "Add Bob Wallace insurance records", date: "Aug 15", asset: "Bob Wallace Building" },
-];
-
 export default function Home() {
-  const [query, setQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("Dashboard");
-  const [notice, setNotice] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [userId, setUserId] = useState<string | null>(null);
 
-  const filteredAssets = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return assets;
-    return assets.filter((asset) =>
-      [asset.name, asset.address, asset.owner, asset.type].some((value) =>
-        value.toLowerCase().includes(normalized),
-      ),
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [name, setName] = useState("");
+  const [address, setAddress] = useState("");
+
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    checkUser();
+  }, []);
+
+  async function checkUser() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user) {
+      setUserId(user.id);
+      await loadProperties(user.id);
+    }
+
+    setLoading(false);
+  }
+
+  async function login() {
+    setMessage("");
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    if (data.user) {
+      setUserId(data.user.id);
+      setEmail("");
+      setPassword("");
+      setMessage("Logged in successfully.");
+      await loadProperties(data.user.id);
+    }
+  }
+
+  async function logout() {
+    await supabase.auth.signOut();
+    setUserId(null);
+    setProperties([]);
+    setMessage("Logged out.");
+  }
+
+  async function loadProperties(currentUserId: string) {
+    const { data, error } = await supabase
+      .from("properties")
+      .select("id, owner_id, name, address")
+      .eq("owner_id", currentUserId)
+      .order("name");
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setProperties(data ?? []);
+  }
+
+  async function addProperty() {
+    if (!userId) return;
+
+    if (!name.trim()) {
+      setMessage("Please enter a property name.");
+      return;
+    }
+
+    setMessage("");
+
+    const { error } = await supabase.from("properties").insert({
+      owner_id: userId,
+      name: name.trim(),
+      address: address.trim(),
+    });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setName("");
+    setAddress("");
+    setMessage("Property added successfully.");
+
+    await loadProperties(userId);
+  }
+
+  if (loading) {
+    return (
+      <main style={{ padding: "40px", fontFamily: "Arial, sans-serif" }}>
+        <h1>MyBigVault</h1>
+        <p>Loading...</p>
+      </main>
     );
-  }, [query]);
+  }
 
-  function showNotice(message: string) {
-    setNotice(message);
-    window.setTimeout(() => setNotice(null), 3200);
+  if (!userId) {
+    return (
+      <main
+        style={{
+          maxWidth: "500px",
+          margin: "60px auto",
+          padding: "30px",
+          fontFamily: "Arial, sans-serif",
+        }}
+      >
+        <h1>MyBigVault</h1>
+        <h2>Login</h2>
+
+        <div style={{ marginBottom: "15px" }}>
+          <label>Email</label>
+          <br />
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "10px",
+              marginTop: "5px",
+              boxSizing: "border-box",
+            }}
+          />
+        </div>
+
+        <div style={{ marginBottom: "15px" }}>
+          <label>Password</label>
+          <br />
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "10px",
+              marginTop: "5px",
+              boxSizing: "border-box",
+            }}
+          />
+        </div>
+
+        <button
+          onClick={login}
+          style={{
+            padding: "10px 20px",
+            cursor: "pointer",
+          }}
+        >
+          Login
+        </button>
+
+        {message && <p>{message}</p>}
+      </main>
+    );
   }
 
   return (
-    <main className="appShell">
-      {notice ? <div className="toast">{notice}</div> : null}
-
-      <header className="topbar">
-        <div className="brandGroup">
-          <div className="brandMark">M</div>
-          <div>
-            <h1>MyBigVault</h1>
-            <p>Private asset management</p>
-          </div>
-        </div>
-        <button className="avatar" aria-label="Account menu" onClick={() => showNotice("Account settings will be connected next.")}>BW</button>
-      </header>
-
-      <nav className="navTabs" aria-label="Main navigation">
-        {["Dashboard", "Assets", "Documents", "Reminders", "Companies"].map((tab) => (
-          <button
-            className={activeTab === tab ? "navTab active" : "navTab"}
-            key={tab}
-            onClick={() => {
-              setActiveTab(tab);
-              if (tab !== "Dashboard" && tab !== "Assets") showNotice(`${tab} is included in the next connection step.`);
-            }}
-          >
-            {tab}
-          </button>
-        ))}
-      </nav>
-
-      <section className="hero">
+    <main
+      style={{
+        maxWidth: "900px",
+        margin: "40px auto",
+        padding: "20px",
+        fontFamily: "Arial, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
         <div>
-          <span className="eyebrow">WELCOME BACK, BEN</span>
-          <h2>Your assets, documents, and deadlines—together in one place.</h2>
-          <p>Version 1 is ready with your starting properties and a mobile-friendly dashboard.</p>
+          <h1>MyBigVault</h1>
+          <p>Your private asset vault</p>
         </div>
-        <div className="heroActions">
-          <button className="primary" onClick={() => showNotice("The add-asset form will connect to Supabase next.")}>+ Add asset</button>
-          <button className="ghost" onClick={() => showNotice("Document upload will connect to secure storage next.")}>Upload document</button>
+
+        <button
+          onClick={logout}
+          style={{
+            padding: "8px 15px",
+            cursor: "pointer",
+          }}
+        >
+          Log Out
+        </button>
+      </div>
+
+      <hr />
+
+      <section style={{ marginTop: "30px" }}>
+        <h2>Add Property</h2>
+
+        <div style={{ marginBottom: "12px" }}>
+          <label>Property Name</label>
+          <br />
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Example: Bob Wallace Building"
+            style={{
+              width: "100%",
+              padding: "10px",
+              marginTop: "5px",
+              boxSizing: "border-box",
+            }}
+          />
         </div>
+
+        <div style={{ marginBottom: "12px" }}>
+          <label>Address</label>
+          <br />
+          <input
+            type="text"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            placeholder="Example: 3000 Bob Wallace Ave"
+            style={{
+              width: "100%",
+              padding: "10px",
+              marginTop: "5px",
+              boxSizing: "border-box",
+            }}
+          />
+        </div>
+
+        <button
+          onClick={addProperty}
+          style={{
+            padding: "10px 20px",
+            cursor: "pointer",
+          }}
+        >
+          Add Property
+        </button>
       </section>
 
-      <section className="stats" aria-label="Vault summary">
-        <article><span className="statIcon">⌂</span><div><strong>3</strong><span>Assets</span></div></article>
-        <article><span className="statIcon">▤</span><div><strong>2</strong><span>Documents</span></div></article>
-        <article><span className="statIcon">◷</span><div><strong>2</strong><span>Open reminders</span></div></article>
-        <article><span className="statIcon">◉</span><div><strong>2</strong><span>Companies</span></div></article>
-      </section>
+      {message && (
+        <p
+          style={{
+            marginTop: "20px",
+            padding: "10px",
+            background: "#f3f3f3",
+          }}
+        >
+          {message}
+        </p>
+      )}
 
-      <section className="contentGrid">
-        <div className="mainColumn">
-          <div className="sectionHeader">
-            <div>
-              <h3>{activeTab === "Assets" ? "All assets" : "Your assets"}</h3>
-              <p>Search by name, address, company, or asset type.</p>
+      <section style={{ marginTop: "40px" }}>
+        <h2>My Properties</h2>
+
+        {properties.length === 0 ? (
+          <p>No properties have been added yet.</p>
+        ) : (
+          properties.map((property) => (
+            <div
+              key={property.id}
+              style={{
+                border: "1px solid #ddd",
+                borderRadius: "8px",
+                padding: "18px",
+                marginBottom: "15px",
+              }}
+            >
+              <h3 style={{ marginTop: 0 }}>{property.name}</h3>
+              <p>{property.address || "No address entered"}</p>
             </div>
-            <label className="searchBox">
-              <span>⌕</span>
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search your vault" />
-            </label>
-          </div>
-
-          <section className="assetGrid">
-            {filteredAssets.map((asset) => (
-              <article className="assetCard" key={asset.name}>
-                <div className="cardTop">
-                  <div className="assetIcon">⌂</div>
-                  <span className={asset.status === "Active" ? "status activeStatus" : "status"}>{asset.status}</span>
-                </div>
-                <p className="assetType">{asset.type}</p>
-                <h4>{asset.name}</h4>
-                <p className="address">{asset.address}</p>
-                <dl>
-                  <div><dt>Owner</dt><dd>{asset.owner}</dd></div>
-                  <div><dt>Documents</dt><dd>{asset.documents}</dd></div>
-                </dl>
-                <p className="cardNote">{asset.note}</p>
-                <button className="openButton" onClick={() => showNotice(`${asset.name} detail page is prepared for the database connection.`)}>Open asset <span>→</span></button>
-              </article>
-            ))}
-          </section>
-          {filteredAssets.length === 0 ? <div className="emptyState">No assets match “{query}”.</div> : null}
-        </div>
-
-        <aside className="sideColumn">
-          <section className="panel">
-            <div className="panelHeader"><div><span className="miniEyebrow">UPCOMING</span><h3>Reminders</h3></div><button onClick={() => showNotice("Reminder creation will connect next.")}>+</button></div>
-            <div className="reminderList">
-              {reminders.map((reminder) => (
-                <article key={reminder.title}>
-                  <div className="dateBadge"><strong>{reminder.date.split(" ")[1]}</strong><span>{reminder.date.split(" ")[0]}</span></div>
-                  <div><h4>{reminder.title}</h4><p>{reminder.asset}</p></div>
-                </article>
-              ))}
-            </div>
-          </section>
-
-          <section className="aiPanel">
-            <div className="spark">✦</div>
-            <span className="miniEyebrow">AI DOCUMENT ASSISTANT</span>
-            <h3>File documents automatically</h3>
-            <p>MyBigVault will read a contract, policy, deed, or invoice and suggest the correct asset.</p>
-            <button onClick={() => showNotice("AI filing comes after secure document upload is connected.")}>See how it will work</button>
-          </section>
-
-          <section className="panel companyPanel">
-            <span className="miniEyebrow">OWNERSHIP</span>
-            <h3>Companies</h3>
-            <div className="companyRow"><span>BAA</span><div><strong>BAA Investments LLC</strong><small>1 asset</small></div></div>
-            <div className="companyRow"><span>WL</span><div><strong>Wheeler Land Holdings LLC</strong><small>1 asset</small></div></div>
-          </section>
-        </aside>
+          ))
+        )}
       </section>
-
-      <footer>MyBigVault private prototype • Version 0.2</footer>
     </main>
   );
 }
