@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Session } from "@supabase/supabase-js";
+import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
 type Property = {
   id: string;
   created_at: string;
+  owner_id: string;
   name: string;
   address: string | null;
   owner_entity: string | null;
@@ -15,7 +16,7 @@ type Property = {
 };
 
 export default function Home() {
-  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   const [email, setEmail] = useState("");
@@ -23,6 +24,7 @@ export default function Home() {
   const [authMessage, setAuthMessage] = useState("");
 
   const [properties, setProperties] = useState<Property[]>([]);
+
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [ownerEntity, setOwnerEntity] = useState("");
@@ -35,10 +37,10 @@ export default function Home() {
   useEffect(() => {
     async function initializeAuth() {
       const {
-        data: { session },
-      } = await supabase.auth.getSession();
+        data: { user },
+      } = await supabase.auth.getUser();
 
-      setSession(session);
+      setUser(user);
       setAuthLoading(false);
     }
 
@@ -47,7 +49,7 @@ export default function Home() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
+      setUser(session?.user ?? null);
     });
 
     return () => {
@@ -56,12 +58,12 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (session) {
-      loadProperties();
+    if (user) {
+      loadProperties(user.id);
     } else {
       setProperties([]);
     }
-  }, [session]);
+  }, [user]);
 
   async function signIn(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -69,7 +71,7 @@ export default function Home() {
     setAuthMessage("");
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
     });
@@ -80,6 +82,7 @@ export default function Home() {
       return;
     }
 
+    setUser(data.user);
     setEmail("");
     setPassword("");
     setAuthMessage("");
@@ -88,14 +91,17 @@ export default function Home() {
 
   async function signOut() {
     await supabase.auth.signOut();
+
+    setUser(null);
     setProperties([]);
     setMessage("");
   }
 
-  async function loadProperties() {
+  async function loadProperties(ownerId: string) {
     const { data, error } = await supabase
       .from("properties")
       .select("*")
+      .eq("owner_id", ownerId)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -110,6 +116,11 @@ export default function Home() {
   async function addProperty(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
+    if (!user) {
+      setMessage("You must be logged in to add a property.");
+      return;
+    }
+
     if (!name.trim()) {
       setMessage("Please enter a property name.");
       return;
@@ -120,6 +131,7 @@ export default function Home() {
 
     const { error } = await supabase.from("properties").insert([
       {
+        owner_id: user.id,
         name: name.trim(),
         address: address.trim() || null,
         owner_entity: ownerEntity.trim() || null,
@@ -143,7 +155,7 @@ export default function Home() {
 
     setMessage("Property added successfully.");
 
-    await loadProperties();
+    await loadProperties(user.id);
 
     setLoading(false);
   }
@@ -164,7 +176,7 @@ export default function Home() {
     );
   }
 
-  if (!session) {
+  if (!user) {
     return (
       <main
         style={{
@@ -174,11 +186,21 @@ export default function Home() {
           fontFamily: "Arial, sans-serif",
         }}
       >
-        <h1 style={{ fontSize: "36px", marginBottom: "8px" }}>
+        <h1
+          style={{
+            fontSize: "36px",
+            marginBottom: "8px",
+          }}
+        >
           MyBigVault
         </h1>
 
-        <p style={{ color: "#555", marginBottom: "30px" }}>
+        <p
+          style={{
+            color: "#555",
+            marginBottom: "30px",
+          }}
+        >
           Sign in to access your private property vault.
         </p>
 
@@ -186,7 +208,10 @@ export default function Home() {
           <div style={{ marginBottom: "15px" }}>
             <label
               htmlFor="email"
-              style={{ display: "block", marginBottom: "5px" }}
+              style={{
+                display: "block",
+                marginBottom: "5px",
+              }}
             >
               Email
             </label>
@@ -208,7 +233,10 @@ export default function Home() {
           <div style={{ marginBottom: "20px" }}>
             <label
               htmlFor="password"
-              style={{ display: "block", marginBottom: "5px" }}
+              style={{
+                display: "block",
+                marginBottom: "5px",
+              }}
             >
               Password
             </label>
@@ -283,7 +311,12 @@ export default function Home() {
             MyBigVault
           </h1>
 
-          <p style={{ margin: 0, color: "#555" }}>
+          <p
+            style={{
+              margin: 0,
+              color: "#555",
+            }}
+          >
             Your private property and asset vault.
           </p>
         </div>
@@ -313,7 +346,10 @@ export default function Home() {
           <div style={{ marginBottom: "15px" }}>
             <label
               htmlFor="property-name"
-              style={{ display: "block", marginBottom: "5px" }}
+              style={{
+                display: "block",
+                marginBottom: "5px",
+              }}
             >
               Property Name *
             </label>
@@ -335,7 +371,10 @@ export default function Home() {
           <div style={{ marginBottom: "15px" }}>
             <label
               htmlFor="address"
-              style={{ display: "block", marginBottom: "5px" }}
+              style={{
+                display: "block",
+                marginBottom: "5px",
+              }}
             >
               Address
             </label>
@@ -357,7 +396,10 @@ export default function Home() {
           <div style={{ marginBottom: "15px" }}>
             <label
               htmlFor="owner-entity"
-              style={{ display: "block", marginBottom: "5px" }}
+              style={{
+                display: "block",
+                marginBottom: "5px",
+              }}
             >
               Ownership Entity
             </label>
@@ -379,7 +421,10 @@ export default function Home() {
           <div style={{ marginBottom: "15px" }}>
             <label
               htmlFor="asset-type"
-              style={{ display: "block", marginBottom: "5px" }}
+              style={{
+                display: "block",
+                marginBottom: "5px",
+              }}
             >
               Asset Type
             </label>
@@ -401,7 +446,10 @@ export default function Home() {
           <div style={{ marginBottom: "15px" }}>
             <label
               htmlFor="notes"
-              style={{ display: "block", marginBottom: "5px" }}
+              style={{
+                display: "block",
+                marginBottom: "5px",
+              }}
             >
               Notes
             </label>
@@ -461,7 +509,9 @@ export default function Home() {
                 marginBottom: "15px",
               }}
             >
-              <h3 style={{ marginTop: 0 }}>{property.name}</h3>
+              <h3 style={{ marginTop: 0 }}>
+                {property.name}
+              </h3>
 
               {property.address && (
                 <p>
