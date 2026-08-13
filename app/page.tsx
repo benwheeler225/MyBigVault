@@ -31,6 +31,8 @@ export default function Home() {
   const [assetType, setAssetType] = useState("");
   const [notes, setNotes] = useState("");
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -95,6 +97,7 @@ export default function Home() {
     setUser(null);
     setProperties([]);
     setMessage("");
+    clearForm();
   }
 
   async function loadProperties(ownerId: string) {
@@ -113,11 +116,20 @@ export default function Home() {
     setProperties(data ?? []);
   }
 
+  function clearForm() {
+    setName("");
+    setAddress("");
+    setOwnerEntity("");
+    setAssetType("");
+    setNotes("");
+    setEditingId(null);
+  }
+
   async function addProperty(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
     if (!user) {
-      setMessage("You must be logged in to add a property.");
+      setMessage("You must be logged in.");
       return;
     }
 
@@ -129,35 +141,73 @@ export default function Home() {
     setLoading(true);
     setMessage("");
 
-    const { error } = await supabase.from("properties").insert([
-      {
-        owner_id: user.id,
-        name: name.trim(),
-        address: address.trim() || null,
-        owner_entity: ownerEntity.trim() || null,
-        asset_type: assetType.trim() || null,
-        notes: notes.trim() || null,
-      },
-    ]);
+    if (editingId) {
+      const { error } = await supabase
+        .from("properties")
+        .update({
+          name: name.trim(),
+          address: address.trim() || null,
+          owner_entity: ownerEntity.trim() || null,
+          asset_type: assetType.trim() || null,
+          notes: notes.trim() || null,
+        })
+        .eq("id", editingId)
+        .eq("owner_id", user.id);
 
-    if (error) {
-      console.error(error);
-      setMessage(`Error adding property: ${error.message}`);
-      setLoading(false);
-      return;
+      if (error) {
+        console.error(error);
+        setMessage(`Error updating property: ${error.message}`);
+        setLoading(false);
+        return;
+      }
+
+      setMessage("Property updated successfully.");
+    } else {
+      const { error } = await supabase.from("properties").insert([
+        {
+          owner_id: user.id,
+          name: name.trim(),
+          address: address.trim() || null,
+          owner_entity: ownerEntity.trim() || null,
+          asset_type: assetType.trim() || null,
+          notes: notes.trim() || null,
+        },
+      ]);
+
+      if (error) {
+        console.error(error);
+        setMessage(`Error adding property: ${error.message}`);
+        setLoading(false);
+        return;
+      }
+
+      setMessage("Property added successfully.");
     }
 
-    setName("");
-    setAddress("");
-    setOwnerEntity("");
-    setAssetType("");
-    setNotes("");
-
-    setMessage("Property added successfully.");
-
+    clearForm();
     await loadProperties(user.id);
 
     setLoading(false);
+  }
+
+  function editProperty(property: Property) {
+    setEditingId(property.id);
+    setName(property.name);
+    setAddress(property.address ?? "");
+    setOwnerEntity(property.owner_entity ?? "");
+    setAssetType(property.asset_type ?? "");
+    setNotes(property.notes ?? "");
+    setMessage("");
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  }
+
+  function cancelEdit() {
+    clearForm();
+    setMessage("Edit cancelled.");
   }
 
   if (authLoading) {
@@ -340,7 +390,9 @@ export default function Home() {
           marginBottom: "35px",
         }}
       >
-        <h2 style={{ marginTop: 0 }}>Add Property</h2>
+        <h2 style={{ marginTop: 0 }}>
+          {editingId ? "Edit Property" : "Add Property"}
+        </h2>
 
         <form onSubmit={addProperty}>
           <div style={{ marginBottom: "15px" }}>
@@ -468,17 +520,42 @@ export default function Home() {
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
+          <div
             style={{
-              padding: "12px 20px",
-              fontSize: "16px",
-              cursor: loading ? "not-allowed" : "pointer",
+              display: "flex",
+              gap: "10px",
             }}
           >
-            {loading ? "Adding..." : "Add Property"}
-          </button>
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                padding: "12px 20px",
+                fontSize: "16px",
+                cursor: loading ? "not-allowed" : "pointer",
+              }}
+            >
+              {loading
+                ? "Saving..."
+                : editingId
+                ? "Save Changes"
+                : "Add Property"}
+            </button>
+
+            {editingId && (
+              <button
+                type="button"
+                onClick={cancelEdit}
+                style={{
+                  padding: "12px 20px",
+                  fontSize: "16px",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            )}
+          </div>
         </form>
 
         {message && (
@@ -509,9 +586,7 @@ export default function Home() {
                 marginBottom: "15px",
               }}
             >
-              <h3 style={{ marginTop: 0 }}>
-                {property.name}
-              </h3>
+              <h3 style={{ marginTop: 0 }}>{property.name}</h3>
 
               {property.address && (
                 <p>
@@ -537,6 +612,18 @@ export default function Home() {
                   <strong>Notes:</strong> {property.notes}
                 </p>
               )}
+
+              <button
+                type="button"
+                onClick={() => editProperty(property)}
+                style={{
+                  padding: "9px 16px",
+                  cursor: "pointer",
+                  marginTop: "5px",
+                }}
+              >
+                Edit Property
+              </button>
             </div>
           ))
         )}
